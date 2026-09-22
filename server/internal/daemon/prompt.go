@@ -68,6 +68,10 @@ func perTurnContextBlocks(task Task, opts promptOpts) string {
 		b.WriteString(sessionContinuityNoticeFor(task))
 	}
 	b.WriteString(execenv.BuildTaskInitiatorBlock(task.InitiatorType, task.InitiatorName, task.InitiatorEmail))
+	if originator := task.AttributionOriginator(); originator != nil &&
+		!(task.InitiatorType == "member" && task.InitiatorID != "" && task.InitiatorID == originator.ID) {
+		b.WriteString(execenv.BuildOriginalRequesterBlock(originator.Name, originator.Email))
+	}
 	b.WriteString(execenv.BuildConnectedAppsBlock(task.ConnectedApps))
 	return b.String()
 }

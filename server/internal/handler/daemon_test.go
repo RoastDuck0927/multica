@@ -4375,6 +4375,66 @@ func TestClaimTaskByRuntime_CommentTaskPopulatesInitiator(t *testing.T) {
 	}
 }
 
+// TestClaimTaskByRuntime_DelegatedRunHydratesOriginator covers GH-8674: an
+// agent-authored handoff has two distinct actors. The triggering agent is the
+// immediate task initiator, while originator_user_id preserves the human at
+// the root of the delegation chain. Both identities must reach the daemon in a
+// displayable form so the prompt can distinguish who handed off the task from
+// who originally requested the work.
+func TestClaimTaskByRuntime_DelegatedRunHydratesOriginator(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	targetRuntimeID := createClaimReclaimRuntime(t, ctx, "Delegated originator target runtime")
+	targetAgentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, targetRuntimeID, "Delegated originator target")
+	sourceRuntimeID := createClaimReclaimRuntime(t, ctx, "Delegated originator source runtime")
+	sourceAgentID := dbfx.Agent(t, "Delegating agent", sourceRuntimeID)
+	sourceTaskID := dbfx.Task(t, sourceAgentID, testutil.Cols{
+		"runtime_id":          sourceRuntimeID,
+		"issue_id":            issueID,
+		"status":              "completed",
+		"originator_source":   "direct_human",
+		"originator_user_id":  testUserID,
+		"accountable_user_id": testUserID,
+	})
+	triggerID := dbfx.Comment(t, issueID, "Please take over this investigation", testutil.Cols{
+		"author_type":    "agent",
+		"author_id":      sourceAgentID,
+		"source_task_id": sourceTaskID,
+	})
+	taskID := dbfx.Task(t, targetAgentID, testutil.Cols{
+		"runtime_id":             targetRuntimeID,
+		"issue_id":               issueID,
+		"trigger_comment_id":     triggerID,
+		"originator_source":      "delegation",
+		"originator_user_id":     testUserID,
+		"accountable_user_id":    testUserID,
+		"delegated_from_task_id": sourceTaskID,
+	})
+
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+targetRuntimeID+"/tasks/claim", nil, testWorkspaceID, "delegated-originator-claim")
+	req = withURLParam(req, "runtimeId", targetRuntimeID)
+	var resp struct {
+		Task *AgentTaskResponse `json:"task"`
+	}
+	testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusOK).JSON(&resp)
+	if resp.Task == nil || resp.Task.ID != taskID {
+		t.Fatalf("expected claimed task %s, got %+v", taskID, resp.Task)
+	}
+	if resp.Task.InitiatorType != "agent" || resp.Task.InitiatorID != sourceAgentID || resp.Task.InitiatorName != "Delegating agent" {
+		t.Fatalf("immediate initiator = {%q %q %q}, want delegating agent {%q %q}",
+			resp.Task.InitiatorType, resp.Task.InitiatorID, resp.Task.InitiatorName, sourceAgentID, "Delegating agent")
+	}
+	if resp.Task.Attribution == nil || resp.Task.Attribution.Originator == nil {
+		t.Fatalf("delegated task lost originator attribution: %+v", resp.Task.Attribution)
+	}
+	if got := resp.Task.Attribution.Originator; got.ID != testUserID || got.Name != handlerTestName || got.Email != handlerTestEmail {
+		t.Fatalf("originator = {%q %q %q}, want {%q %q %q}",
+			got.ID, got.Name, got.Email, testUserID, handlerTestName, handlerTestEmail)
+	}
+}
+
 func TestClaimTaskByRuntime_CommentTaskOmitsDeltaWhenOnlyTriggerIsNew(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

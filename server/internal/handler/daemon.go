@@ -3658,6 +3658,13 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
+	// Daemon claims are the only task surface that turns attribution into agent
+	// context. taskToResponse already carries the raw accountable/originator ids;
+	// hydrate them only after every source/workspace/version gate has passed so a
+	// rejected claim never receives another user's profile data. Best-effort is
+	// intentional: the raw provenance remains useful if the display lookup fails.
+	h.hydrateTaskAttributions(r.Context(), []*TaskAttribution{resp.Attribution})
+
 	return resp, deliveredCommentIDs, issueSnapshot, agentSkillCount, builtinSkillCount, nil
 }
 

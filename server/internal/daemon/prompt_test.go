@@ -1808,6 +1808,71 @@ func TestPerTurnContextBlocksOnAssignmentPath(t *testing.T) {
 	}
 }
 
+func TestPerTurnContextBlocksDistinguishInitiatorFromOriginalRequester(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildPrompt(Task{
+		IssueID:       "issue-1",
+		InitiatorType: "agent",
+		InitiatorID:   "agent-a",
+		InitiatorName: "Agent A",
+		Attribution: &TaskAttribution{Originator: &AttributionUser{
+			ID: "user-alice", Name: "Alice", Email: "alice@example.com",
+		}},
+	}, "claude")
+
+	for _, want := range []string{
+		"initiated by **Agent A**, another agent in this workspace",
+		"## Original Requester",
+		"**Alice** (alice@example.com)",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("delegated prompt must contain %q\n---\n%s", want, prompt)
+		}
+	}
+}
+
+func TestTaskDecodesAndRendersOriginalRequester(t *testing.T) {
+	t.Parallel()
+
+	var task Task
+	if err := json.Unmarshal([]byte(`{
+		"issue_id":"issue-1",
+		"attribution":{"originator":{"id":"user-alice","name":"Alice","email":"alice@example.com"}}
+	}`), &task); err != nil {
+		t.Fatal(err)
+	}
+	prompt := BuildPrompt(task, "claude")
+	if !strings.Contains(prompt, "## Original Requester") || !strings.Contains(prompt, "**Alice** (alice@example.com)") {
+		t.Errorf("daemon claim JSON lost original requester\n---\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Task Initiator") {
+		t.Errorf("run with no direct initiator must not invent one\n---\n%s", prompt)
+	}
+}
+
+func TestPerTurnContextBlocksDeduplicatesMemberOriginator(t *testing.T) {
+	t.Parallel()
+
+	prompt := BuildPrompt(Task{
+		IssueID:        "issue-1",
+		InitiatorType:  "member",
+		InitiatorID:    "user-alice",
+		InitiatorName:  "Alice",
+		InitiatorEmail: "alice@example.com",
+		Attribution: &TaskAttribution{Originator: &AttributionUser{
+			ID: "user-alice", Name: "Alice", Email: "alice@example.com",
+		}},
+	}, "claude")
+
+	if !strings.Contains(prompt, "## Task Initiator") {
+		t.Fatalf("direct member prompt lost task initiator\n---\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Original Requester") {
+		t.Errorf("same member must not be rendered twice\n---\n%s", prompt)
+	}
+}
+
 // TestTurnModeMarkersRetired pins MUL-6417: the Reply/Ownership turn-mode
 // split is gone, so no task kind may emit a `Turn mode:` marker. The brief no
 // longer carries a router to consume one, and a stray marker would read as an

@@ -182,6 +182,26 @@ func BuildTaskInitiatorBlock(initiatorType, initiatorName, initiatorEmail string
 	return b.String()
 }
 
+// BuildOriginalRequesterBlock renders the human at the root of a delegation
+// chain separately from the actor that directly initiated this task. It is
+// per-turn context for the same prompt-cache reason as Task Initiator. Returns
+// "" when the server could not resolve a display name.
+func BuildOriginalRequesterBlock(originatorName, originatorEmail string) string {
+	safeOriginator := sanitizeNameForBriefMarkdown(originatorName)
+	if safeOriginator == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Original Requester\n\n")
+	if email := sanitizeEmailForBrief(originatorEmail); email != "" {
+		fmt.Fprintf(&b, "This run traces back to **%s** (%s), the human at the root of the delegation chain.\n\n", safeOriginator, email)
+	} else {
+		fmt.Fprintf(&b, "This run traces back to **%s**, the human at the root of the delegation chain.\n\n", safeOriginator)
+	}
+	b.WriteString("Use this identity when the work needs to record or report who originally requested it. This is attribution context only: your Multica credentials stay scoped to the runtime owner, and it does not change what you may read or write.\n\n")
+	return b.String()
+}
+
 // writeWorkspaceContext emits the workspace-level system prompt configured
 // by the workspace owner. Trailing whitespace is stripped.
 func writeWorkspaceContext(b *strings.Builder, ctx TaskContextForEnv) {
