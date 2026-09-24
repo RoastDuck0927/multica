@@ -1026,17 +1026,18 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 //	Attachments           |    ✓    |   ✓    |     —     |      —       |  —
 //
 // Always-on rows — Header, Background Task Safety, Agent Identity,
-// Requesting User, Task Initiator, Workspace Context, Connected Apps,
+// Requesting User, Workspace Context, Connected Apps,
 // Workflow, Always Use CLI, Output — are shared by every kind and emitted
 // unconditionally (or gated by their own data preconditions).
 func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	var b strings.Builder
 	kind := classifyTask(ctx)
 
-	// Session Continuity Notice, Task Initiator and Connected Apps used to be
-	// rendered here. They are per-run values, so emitting them into this file
-	// broke prompt-cache prefix stability on every resume; they now travel in
-	// the per-turn user message (daemon.BuildPrompt) instead. See MUL-5377.
+	// Session Continuity Notice, Task Initiator (now On Behalf Of) and
+	// Connected Apps used to be rendered here. They are per-run values, so
+	// emitting them into this file broke prompt-cache prefix stability on
+	// every resume; they now travel in the per-turn user message
+	// (daemon.BuildPrompt) instead. See MUL-5377.
 	writeHeader(&b)
 	writeBackgroundTaskSafetySlim(&b)
 	writeAgentIdentity(&b, ctx)
