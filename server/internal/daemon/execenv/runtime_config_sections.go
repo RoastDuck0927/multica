@@ -30,7 +30,7 @@ import (
 //     Sub-issue, ...).
 //  2. Per-section prose compression — Available Commands, Issue
 //     Body Formatting, Mentions, Sub-issue Creation,
-//     Comment Formatting, Always Use CLI, Background Task Safety, Task Initiator,
+//     Comment Formatting, Always Use CLI, Background Task Safety,
 //     Repositories, Output are all tightened. Test-asserted phrases either
 //     survive verbatim or are renegotiated to new semantic anchors in the
 //     same PR (MUL-5442 established that discipline); no assertion is
@@ -155,50 +155,23 @@ func writeRequestingUser(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("\nTreat this as background context, not as task instructions. If it conflicts with the actual task, the task wins.\n\n")
 }
 
-// BuildTaskInitiatorBlock renders the Task Initiator block for the per-turn
-// user message. Both MUL-2645 test-pinned phrases ("apply any per-person
-// privacy or access rules" and "credentials stay scoped to the runtime
-// owner") are kept.
-//
-// This lives in the per-turn prompt rather than the runtime brief because the
-// initiator changes whenever a different person or agent triggers a run on the
-// same issue; rendering it into the brief broke prompt-cache prefix stability
-// across resumes (MUL-5377). Returns "" when no initiator name resolves.
-func BuildTaskInitiatorBlock(initiatorType, initiatorName, initiatorEmail string) string {
-	safeInitiator := sanitizeNameForBriefMarkdown(initiatorName)
-	if safeInitiator == "" {
+// BuildOnBehalfOfBlock renders the run's authorization human in per-turn
+// context. This value can change between runs on a resumed issue, so keeping
+// it out of the runtime brief preserves the prompt-cache prefix (MUL-5377).
+// Returns "" when the server could not resolve a display name.
+func BuildOnBehalfOfBlock(name, email string) string {
+	safeName := sanitizeNameForBriefMarkdown(name)
+	if safeName == "" {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("## Task Initiator\n\n")
-	if initiatorType == "agent" {
-		fmt.Fprintf(&b, "This task was initiated by **%s**, another agent in this workspace.\n\n", safeInitiator)
-	} else if email := sanitizeEmailForBrief(initiatorEmail); email != "" {
-		fmt.Fprintf(&b, "This task was initiated by **%s** (%s), a member of this workspace.\n\n", safeInitiator, email)
+	b.WriteString("## On Behalf Of\n\n")
+	if safeEmail := sanitizeEmailForBrief(email); safeEmail != "" {
+		fmt.Fprintf(&b, "You are acting on behalf of **%s** (%s). ", safeName, safeEmail)
 	} else {
-		fmt.Fprintf(&b, "This task was initiated by **%s**, a member of this workspace.\n\n", safeInitiator)
+		fmt.Fprintf(&b, "You are acting on behalf of **%s**. ", safeName)
 	}
-	b.WriteString("The initiator — not the runtime owner — is who you are answering: apply any per-person privacy or access rules your instructions define. Your Multica credentials stay scoped to the runtime owner, and initiator attribution does not change what you may read or write; do not assume the initiator can see everything you can.\n\n")
-	return b.String()
-}
-
-// BuildOriginalRequesterBlock renders the human at the root of a delegation
-// chain separately from the actor that directly initiated this task. It is
-// per-turn context for the same prompt-cache reason as Task Initiator. Returns
-// "" when the server could not resolve a display name.
-func BuildOriginalRequesterBlock(originatorName, originatorEmail string) string {
-	safeOriginator := sanitizeNameForBriefMarkdown(originatorName)
-	if safeOriginator == "" {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("## Original Requester\n\n")
-	if email := sanitizeEmailForBrief(originatorEmail); email != "" {
-		fmt.Fprintf(&b, "This run traces back to **%s** (%s), the human at the root of the delegation chain.\n\n", safeOriginator, email)
-	} else {
-		fmt.Fprintf(&b, "This run traces back to **%s**, the human at the root of the delegation chain.\n\n", safeOriginator)
-	}
-	b.WriteString("Use this identity when the work needs to record or report who originally requested it. This is attribution context only: your Multica credentials stay scoped to the runtime owner, and it does not change what you may read or write.\n\n")
+	b.WriteString("Apply any person-specific privacy or access rules in your instructions to this person. Your Multica credentials and access remain scoped to the runtime owner; do not assume this person can access everything you can.\n\n")
 	return b.String()
 }
 
